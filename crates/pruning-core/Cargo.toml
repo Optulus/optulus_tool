@@ -9,6 +9,7 @@ serde.workspace = true
 serde_json.workspace = true
 regex.workspace = true
 thiserror.workspace = true
+scraper = "0.21"
 
 [dev-dependencies]
 criterion = "0.5"

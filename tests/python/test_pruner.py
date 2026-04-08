@@ -3,12 +3,33 @@ import pytest
 from optulus_sdk import OutputType, Pruner, prune_output
 
 
-def test_html_pruning_reduces_noise() -> None:
-    html = "<html><script>noise</script><body><h1>Hello</h1><p>World</p></body></html>"
-    result = prune_output(html, OutputType.HTML, token_budget=50)
+def test_html_pruning_produces_semantic_format() -> None:
+    html = """<html>
+        <head><title>Test</title></head>
+        <body>
+            <script>noise()</script>
+            <header><h1>Site Header</h1></header>
+            <main>
+                <form id="login" action="/auth">
+                    <input name="email" type="email" placeholder="Email address">
+                    <button type="submit">Sign In</button>
+                    <a href="/forgot">Forgot password?</a>
+                </form>
+            </main>
+            <footer>copyright</footer>
+        </body>
+    </html>"""
+
+    result = prune_output(html, OutputType.HTML, token_budget=200)
 
     assert "noise" not in result.pruned_text
-    assert "Hello World" in result.pruned_text
+    assert "form#login" in result.pruned_text
+    assert "[action=/auth]" in result.pruned_text
+    assert "email" in result.pruned_text
+    assert "Sign In" in result.pruned_text
+    assert "/forgot" in result.pruned_text
+    assert "Site Header" not in result.pruned_text
+    assert "copyright" not in result.pruned_text
 
 
 def test_json_delta_keeps_changed_fields() -> None:
