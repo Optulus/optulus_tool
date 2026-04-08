@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "optulus-sdk"
+version = "0.1.0"
+description = "Rust-powered output pruning engine with Python SDK"
+requires-python = ">=3.10"
+
+[tool.maturin]
+module-name = "optulus_sdk._optulus_native"
+python-source = "."
