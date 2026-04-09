@@ -6,6 +6,24 @@ data/
 documents/
 target/
 .pytest_cache/
+
+# Native extension artifacts (maturin / cargo)
 *.so
 *.dylib
 *.pyd
+*.dll
+
+# macOS debug symbol bundles (contain Relocations/*.yml, DWARF, etc. — never commit)
+*.dSYM/
+
+# Python packaging / build
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Type checkers / coverage (optional local tooling)
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
