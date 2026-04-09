@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+from optulus_sdk.embeddings import HashedEmbeddingProvider
+from optulus_sdk.filtering import filter_tools
+
+
+def weather_tool(city: str) -> str:
+    """Get weather forecast for a city."""
+    return city
+
+
+def stocks_tool(symbol: str) -> str:
+    """Get latest stock price quote."""
+    return symbol
+
+
+def test_filter_tools_returns_original_objects(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    provider = HashedEmbeddingProvider(dimensions=128)
+    dict_tool = {
+        "name": "calendar_events",
+        "description": "Read a user's calendar events",
+        "input_schema": {"type": "object"},
+    }
+    tools = [dict_tool, weather_tool, stocks_tool]
+
+    selected = filter_tools(
+        tools,
+        context="need weather update for tomorrow",
+        max_tools=2,
+        budget_tokens=2000,
+        db_path=db_path,
+        embedding_provider=provider,
+    )
+
+    assert len(selected) == 2
+    assert weather_tool in selected
+    assert any(tool is weather_tool for tool in selected)
+
+
+def test_filter_tools_respects_budget(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    provider = HashedEmbeddingProvider(dimensions=128)
+    tools = [
+        {
+            "name": "heavy_tool",
+            "description": " ".join(["large"] * 400),
+            "input_schema": {"type": "object"},
+        },
+        {
+            "name": "light_tool",
+            "description": "small",
+            "input_schema": {"type": "object"},
+        },
+    ]
+
+    selected = filter_tools(
+        tools,
+        context="small task",
+        max_tools=2,
+        budget_tokens=10,
+        db_path=db_path,
+        embedding_provider=provider,
+    )
+
+    assert len(selected) == 1
+    assert selected[0]["name"] == "light_tool"
+
+
+def test_filter_tools_always_includes_pinned(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    provider = HashedEmbeddingProvider(dimensions=128)
+    tools = [
+        {
+            "name": "debug_logs",
+            "description": "very verbose diagnostics collector",
+            "input_schema": {"type": "object"},
+        },
+        {
+            "name": "weather_lookup",
+            "description": "forecast and temperature for a city",
+            "input_schema": {"type": "object"},
+        },
+    ]
+
+    selected = filter_tools(
+        tools,
+        context="what is weather tomorrow",
+        max_tools=1,
+        budget_tokens=1,
+        pinned=["debug_logs"],
+        db_path=db_path,
+        embedding_provider=provider,
+    )
+
+    names = [tool["name"] for tool in selected]
+    assert "debug_logs" in names
+
+
+def test_filter_tools_is_deterministic_for_ties(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    provider = HashedEmbeddingProvider(dimensions=1)
+    tools = [
+        {"name": "tool_a", "description": "same", "input_schema": {"type": "object"}},
+        {"name": "tool_b", "description": "same", "input_schema": {"type": "object"}},
+        {"name": "tool_c", "description": "same", "input_schema": {"type": "object"}},
+    ]
+
+    first = filter_tools(
+        tools,
+        context="same",
+        max_tools=2,
+        budget_tokens=1000,
+        db_path=db_path,
+        embedding_provider=provider,
+    )
+    second = filter_tools(
+        tools,
+        context="same",
+        max_tools=2,
+        budget_tokens=1000,
+        db_path=db_path,
+        embedding_provider=provider,
+    )
+    assert [tool["name"] for tool in first] == [tool["name"] for tool in second]
