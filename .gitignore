@@ -6,6 +6,7 @@ data/
 documents/
 target/
 .pytest_cache/
+examples/
 
 # Native extension artifacts (maturin / cargo)
 *.so
