@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from optulus_sdk.embeddings import HashedEmbeddingProvider
 from optulus_sdk.filtering import bind_tools, filter_tools
 
@@ -165,3 +167,29 @@ def test_bind_tools_filters_and_binds(tmp_path) -> None:
     assert len(llm.bound_tools) == 1
     assert llm.bound_tools[0]["name"] == "weather_lookup"
     assert result["bound_tools"][0]["name"] == "weather_lookup"
+
+
+def test_filter_tools_accepts_langchain_structured_tool(tmp_path) -> None:
+    pytest.importorskip("langchain_core.tools")
+    from langchain_core.tools import tool
+
+    @tool
+    def lc_weather(city: str) -> str:
+        """Forecast for a city."""
+        return city
+
+    db_path = tmp_path / "registry.db"
+    provider = HashedEmbeddingProvider(dimensions=128)
+    tools = [lc_weather, weather_tool]
+
+    selected = filter_tools(
+        tools,
+        context="weather in Paris tomorrow",
+        max_tools=2,
+        budget_tokens=2000,
+        db_path=db_path,
+        embedding_provider=provider,
+    )
+
+    assert len(selected) == 2
+    assert lc_weather in selected

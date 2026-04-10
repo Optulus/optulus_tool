@@ -11,6 +11,15 @@ Example with Python callables:
         "Search product docs."
         ...
     selected = filter_tools([search_docs], context="find API auth docs")
+
+Example with LangChain ``@tool`` / ``BaseTool`` (requires ``langchain-core`` installed):
+    from langchain_core.tools import tool
+
+    @tool
+    def search_docs(query: str) -> str:
+        \"\"\"Search product docs.\"\"\"
+        ...
+    selected = filter_tools([search_docs], context="find API auth docs")
 """
 
 from pathlib import Path

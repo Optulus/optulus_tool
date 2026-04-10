@@ -6,6 +6,11 @@ import inspect
 import json
 from typing import Any, Callable, Mapping
 
+try:
+    from langchain_core.tools import BaseTool as _LangChainBaseTool
+except ImportError:  # pragma: no cover - optional integration
+    _LangChainBaseTool = None  # type: ignore[misc, assignment]
+
 ToolLike = Mapping[str, Any] | Callable[..., Any]
 
 
@@ -64,6 +69,47 @@ def _normalize_dict_tool(tool: Mapping[str, Any], input_index: int) -> ToolRecor
     )
 
 
+def _normalize_langchain_tool(tool: Any, input_index: int) -> ToolRecord:
+    name = str(getattr(tool, "name", "") or "").strip()
+    if not name:
+        raise ValueError("langchain tool is missing required attribute 'name'")
+
+    description = str(getattr(tool, "description", "") or "").strip()
+    get_json_schema = getattr(tool, "get_input_jsonschema", None)
+    if callable(get_json_schema):
+        try:
+            input_schema = get_json_schema()
+        except Exception:  # pragma: no cover - defensive
+            input_schema = getattr(tool, "args_schema", {})
+    else:
+        input_schema = getattr(tool, "args_schema", {})
+
+    try:
+        schema_text = json.dumps(input_schema, sort_keys=True, separators=(",", ":"))
+    except TypeError:
+        schema_text = str(input_schema)
+
+    payload = {
+        "source_kind": "langchain",
+        "name": name,
+        "description": description,
+        "schema_text": schema_text,
+    }
+    fingerprint = _fingerprint_payload(payload)
+
+    return ToolRecord(
+        tool_id=fingerprint,
+        name=name,
+        description=description,
+        schema_text=schema_text,
+        token_cost_estimate=max(1, _estimate_token_cost(f"{name} {description} {schema_text}")),
+        source_kind="langchain",
+        fingerprint=fingerprint,
+        original_tool=tool,
+        input_index=input_index,
+    )
+
+
 def _normalize_callable_tool(tool: Callable[..., Any], input_index: int) -> ToolRecord:
     name = tool.__name__
     doc = inspect.getdoc(tool) or ""
@@ -97,6 +143,9 @@ def _normalize_callable_tool(tool: Callable[..., Any], input_index: int) -> Tool
 def normalize_tools(tools: list[ToolLike]) -> list[ToolRecord]:
     records: list[ToolRecord] = []
     for index, tool in enumerate(tools):
+        if _LangChainBaseTool is not None and isinstance(tool, _LangChainBaseTool):
+            records.append(_normalize_langchain_tool(tool, input_index=index))
+            continue
         if callable(tool):
             records.append(_normalize_callable_tool(tool, input_index=index))
             continue
@@ -104,7 +153,8 @@ def normalize_tools(tools: list[ToolLike]) -> list[ToolRecord]:
             records.append(_normalize_dict_tool(tool, input_index=index))
             continue
         raise TypeError(
-            "unsupported tool type; expected mapping-style MCP tool or callable, "
+            "unsupported tool type; expected mapping-style MCP tool, callable, "
+            "or langchain_core.tools.BaseTool, "
             f"got {type(tool)!r}"
         )
     return records
