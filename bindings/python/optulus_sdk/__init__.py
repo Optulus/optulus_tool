@@ -1,4 +1,4 @@
-from .pruner import Pruner, prune_output
+from .pruner import Pruner, prune_output, prune_tool_message_content
 from .filtering import bind_tools, filter_tools, register_tools
 from .tool_registry import ToolRegistry
 from .tool_types import ToolRecord
@@ -9,6 +9,7 @@ __all__ = [
     "PruningResult",
     "Pruner",
     "prune_output",
+    "prune_tool_message_content",
     "ToolRegistry",
     "ToolRecord",
     "register_tools",

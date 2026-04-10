@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from typing import Any
@@ -64,4 +65,75 @@ def prune_output(
         output_type=output_type,
         token_budget=token_budget,
         previous_output=previous_output,
+    )
+
+
+def prune_tool_message_content(
+    content: Any,
+    *,
+    output_type: OutputType,
+    token_budget: int,
+    metrics_hook: MetricsHook | None = None,
+) -> Any:
+    """Normalize LangChain / MCP-style tool message ``content`` and prune textual parts.
+
+    Handles:
+
+    - ``str``: passed to :func:`prune_output`; returns ``pruned_text`` (empty string unchanged).
+    - ``list``: each element is processed; string items are pruned recursively; dict
+      blocks with ``type`` equal to ``"text"`` have their ``text`` field pruned; other
+      items are left as-is (e.g. image blocks).
+    - Any other value is JSON-serialized (or ``str()``) and then pruned as a single string.
+
+    Returns the same outer structure as the input (``str``, ``list``, or string after
+    serialization), with only text segments replaced by pruned strings.
+    """
+    if isinstance(content, str):
+        if not content:
+            return content
+        result = prune_output(
+            content,
+            output_type,
+            token_budget=token_budget,
+            metrics_hook=metrics_hook,
+        )
+        return result.pruned_text
+
+    if isinstance(content, list):
+        out: list[Any] = []
+        for block in content:
+            if isinstance(block, str):
+                out.append(
+                    prune_tool_message_content(
+                        block,
+                        output_type=output_type,
+                        token_budget=token_budget,
+                        metrics_hook=metrics_hook,
+                    )
+                )
+            elif isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "")
+                if isinstance(text, str) and text:
+                    pr = prune_output(
+                        text,
+                        output_type,
+                        token_budget=token_budget,
+                        metrics_hook=metrics_hook,
+                    )
+                    out.append({**block, "text": pr.pruned_text})
+                else:
+                    out.append(block)
+            else:
+                out.append(block)
+        return out
+
+    try:
+        serialized = json.dumps(content, ensure_ascii=False)
+    except (TypeError, ValueError):
+        serialized = str(content)
+    return prune_tool_message_content(
+        serialized,
+        output_type=output_type,
+        token_budget=token_budget,
+        metrics_hook=metrics_hook,
     )
