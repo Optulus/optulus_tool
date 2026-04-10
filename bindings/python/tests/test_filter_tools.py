@@ -4,6 +4,7 @@ import pytest
 
 from optulus_sdk.embeddings import HashedEmbeddingProvider
 from optulus_sdk.filtering import bind_tools, filter_tools
+from optulus_sdk.telemetry import ExportResult, TelemetryConfig, TelemetryRecorder
 
 
 def weather_tool(city: str) -> str:
@@ -193,9 +194,13 @@ def test_bind_tools_emits_selection_metrics(tmp_path) -> None:
         budget_tokens=20,
         db_path=db_path,
         embedding_provider=provider,
-        telemetry_enabled=True,
     )
     assert result["bound_tools"][0]["name"] == "weather_lookup"
+
+
+class _NoopTelemetryExporter:
+    def export(self, events):
+        return ExportResult(success=True, attempts=1, status_code=200)
 
 
 def test_bind_tools_logs_selection_when_enabled(tmp_path, caplog) -> None:
@@ -215,18 +220,26 @@ def test_bind_tools_logs_selection_when_enabled(tmp_path, caplog) -> None:
         },
     ]
 
-    with caplog.at_level("INFO"):
-        bind_tools(
-            llm,
-            tools,
-            context="weather tomorrow",
-            max_tools=1,
-            budget_tokens=20,
-            db_path=db_path,
-            embedding_provider=provider,
-            telemetry_enabled=True,
-            logging_enabled=True,
-        )
+    recorder = TelemetryRecorder(
+        _NoopTelemetryExporter(),
+        config=TelemetryConfig(enabled=True, flush_interval_ms=10_000, max_batch_size=100),
+    )
+    recorder.start()
+    try:
+        with caplog.at_level("INFO"):
+            bind_tools(
+                llm,
+                tools,
+                context="weather tomorrow",
+                max_tools=1,
+                budget_tokens=20,
+                db_path=db_path,
+                embedding_provider=provider,
+                logging_enabled=True,
+                telemetry_recorder=recorder,
+            )
+    finally:
+        recorder.stop(flush=True)
 
     logs = "\n".join(caplog.messages)
     assert "Tool selection:" in logs

@@ -37,6 +37,25 @@ pruner = Pruner(metrics_hook=on_metrics)
 pruner.prune_output("line1 line2 line3", OutputType.TEXT, token_budget=2)
 ```
 
+## Telemetry (zero-config)
+
+Enable outbound telemetry with an environment variable (optional ``OPTULUS_API_KEY``):
+
+```bash
+export OPTULUS_TELEMETRY_ENABLED=true
+```
+
+Or in code:
+
+```python
+from optulus_sdk import set_telemetry_enabled, prune_output, OutputType
+
+set_telemetry_enabled(True)
+prune_output("word " * 100, OutputType.TEXT, token_budget=8)
+```
+
+The SDK starts a session (UUID ids) and a background exporter automatically on first event.
+
 ## Validate implementation
 
 ```bash

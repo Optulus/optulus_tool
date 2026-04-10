@@ -6,14 +6,20 @@ from collections.abc import Callable
 from typing import Any
 
 from . import _optulus_native
+from .telemetry import TelemetryRecorder, resolve_telemetry_recorder
 from .types import OutputType, PruningResult
 
 MetricsHook = Callable[[dict[str, Any]], None]
 
 
 class Pruner:
-    def __init__(self, metrics_hook: MetricsHook | None = None) -> None:
+    def __init__(
+        self,
+        metrics_hook: MetricsHook | None = None,
+        telemetry_recorder: TelemetryRecorder | None = None,
+    ) -> None:
         self._metrics_hook = metrics_hook
+        self._telemetry_recorder = telemetry_recorder
 
     def prune_output(
         self,
@@ -49,6 +55,19 @@ class Pruner:
                     "was_truncated": result.was_truncated,
                 }
             )
+        recorder = resolve_telemetry_recorder(self._telemetry_recorder)
+        if recorder is not None:
+            recorder.record_event(
+                "prune",
+                {
+                    "tokens_before": result.tokens_before,
+                    "tokens_after": result.tokens_after,
+                    "latency_ms": elapsed_ms,
+                    "rules_applied": result.rules_applied,
+                    "was_truncated": result.was_truncated,
+                    "output_type": normalized_type,
+                },
+            )
 
         return result
 
@@ -59,8 +78,12 @@ def prune_output(
     token_budget: int,
     previous_output: str | None = None,
     metrics_hook: MetricsHook | None = None,
+    telemetry_recorder: TelemetryRecorder | None = None,
 ) -> PruningResult:
-    return Pruner(metrics_hook=metrics_hook).prune_output(
+    return Pruner(
+        metrics_hook=metrics_hook,
+        telemetry_recorder=telemetry_recorder,
+    ).prune_output(
         raw_output=raw_output,
         output_type=output_type,
         token_budget=token_budget,
@@ -74,6 +97,7 @@ def prune_tool_message_content(
     output_type: OutputType,
     token_budget: int,
     metrics_hook: MetricsHook | None = None,
+    telemetry_recorder: TelemetryRecorder | None = None,
 ) -> Any:
     """Normalize LangChain / MCP-style tool message ``content`` and prune textual parts.
 
@@ -96,6 +120,7 @@ def prune_tool_message_content(
             output_type,
             token_budget=token_budget,
             metrics_hook=metrics_hook,
+            telemetry_recorder=telemetry_recorder,
         )
         return result.pruned_text
 
@@ -109,6 +134,7 @@ def prune_tool_message_content(
                         output_type=output_type,
                         token_budget=token_budget,
                         metrics_hook=metrics_hook,
+                        telemetry_recorder=telemetry_recorder,
                     )
                 )
             elif isinstance(block, dict) and block.get("type") == "text":
@@ -119,6 +145,7 @@ def prune_tool_message_content(
                         output_type,
                         token_budget=token_budget,
                         metrics_hook=metrics_hook,
+                        telemetry_recorder=telemetry_recorder,
                     )
                     out.append({**block, "text": pr.pruned_text})
                 else:
@@ -136,4 +163,5 @@ def prune_tool_message_content(
         output_type=output_type,
         token_budget=token_budget,
         metrics_hook=metrics_hook,
+        telemetry_recorder=telemetry_recorder,
     )

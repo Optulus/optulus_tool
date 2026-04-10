@@ -27,6 +27,7 @@ import logging
 from typing import Iterable, Protocol, Any
 
 from .embeddings import EmbeddingProvider
+from .telemetry import TelemetryRecorder, resolve_telemetry_recorder
 from .tool_registry import ToolRegistry
 from .tool_types import ToolLike
 
@@ -60,8 +61,8 @@ def filter_tools(
     pinned: Iterable[str] | None = None,
     db_path: str | Path = "~/.optulus/registry.db",
     embedding_provider: EmbeddingProvider | None = None,
-    telemetry_enabled: bool = False,
     logging_enabled: bool = False,
+    telemetry_recorder: TelemetryRecorder | None = None,
 ) -> list[ToolLike]:
     if max_tools <= 0:
         raise ValueError("max_tools must be positive")
@@ -95,7 +96,10 @@ def filter_tools(
             )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug("Tool selection event: %s", event)
-        if telemetry_enabled:
+        recorder = resolve_telemetry_recorder(telemetry_recorder)
+        if recorder is not None:
+            recorder.record_event("tool_selection", event)
+        if logging_enabled and recorder is not None:
             logger.info("TELEMETRY tool_selection %s", event)
         registry.record_selection(selected)
         return [record.original_tool for record in selected]
@@ -113,8 +117,8 @@ def bind_tools(
     pinned: Iterable[str] | None = None,
     db_path: str | Path = "~/.optulus/registry.db",
     embedding_provider: EmbeddingProvider | None = None,
-    telemetry_enabled: bool = False,
     logging_enabled: bool = False,
+    telemetry_recorder: TelemetryRecorder | None = None,
 ) -> Any:
     """Filter tools for context and bind them to an LLM in one call."""
     selected = filter_tools(
@@ -125,8 +129,8 @@ def bind_tools(
         pinned=pinned,
         db_path=db_path,
         embedding_provider=embedding_provider,
-        telemetry_enabled=telemetry_enabled,
         logging_enabled=logging_enabled,
+        telemetry_recorder=telemetry_recorder,
     )
     return llm.bind_tools(selected)
 
