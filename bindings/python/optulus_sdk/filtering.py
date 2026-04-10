@@ -14,11 +14,16 @@ Example with Python callables:
 """
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Protocol, Any
 
 from .embeddings import EmbeddingProvider
 from .tool_registry import ToolRegistry
 from .tool_types import ToolLike
+
+
+class SupportsBindTools(Protocol):
+    def bind_tools(self, tools: list[Any]) -> Any:
+        ...
 
 
 def register_tools(
@@ -64,6 +69,30 @@ def filter_tools(
         return [record.original_tool for record in selected]
     finally:
         registry.close()
+
+
+def bind_tools(
+    llm: SupportsBindTools,
+    tools: list[ToolLike],
+    *,
+    context: str,
+    max_tools: int = 10,
+    budget_tokens: int = 2000,
+    pinned: Iterable[str] | None = None,
+    db_path: str | Path = "~/.optulus/registry.db",
+    embedding_provider: EmbeddingProvider | None = None,
+) -> Any:
+    """Filter tools for context and bind them to an LLM in one call."""
+    selected = filter_tools(
+        tools,
+        context=context,
+        max_tools=max_tools,
+        budget_tokens=budget_tokens,
+        pinned=pinned,
+        db_path=db_path,
+        embedding_provider=embedding_provider,
+    )
+    return llm.bind_tools(selected)
 
 
 def _apply_limits(

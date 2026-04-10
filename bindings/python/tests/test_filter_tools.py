@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from optulus_sdk.embeddings import HashedEmbeddingProvider
-from optulus_sdk.filtering import filter_tools
+from optulus_sdk.filtering import bind_tools, filter_tools
 
 
 def weather_tool(city: str) -> str:
@@ -12,6 +12,15 @@ def weather_tool(city: str) -> str:
 def stocks_tool(symbol: str) -> str:
     """Get latest stock price quote."""
     return symbol
+
+
+class DummyLLM:
+    def __init__(self) -> None:
+        self.bound_tools = None
+
+    def bind_tools(self, tools):
+        self.bound_tools = tools
+        return {"bound_tools": tools}
 
 
 def test_filter_tools_returns_original_objects(tmp_path) -> None:
@@ -123,3 +132,36 @@ def test_filter_tools_is_deterministic_for_ties(tmp_path) -> None:
         embedding_provider=provider,
     )
     assert [tool["name"] for tool in first] == [tool["name"] for tool in second]
+
+
+def test_bind_tools_filters_and_binds(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    provider = HashedEmbeddingProvider(dimensions=128)
+    llm = DummyLLM()
+    tools = [
+        {
+            "name": "weather_lookup",
+            "description": "Get weather forecast",
+            "input_schema": {"type": "object"},
+        },
+        {
+            "name": "heavy_debug_tool",
+            "description": " ".join(["debug"] * 300),
+            "input_schema": {"type": "object"},
+        },
+    ]
+
+    result = bind_tools(
+        llm,
+        tools,
+        context="weather tomorrow",
+        max_tools=1,
+        budget_tokens=20,
+        db_path=db_path,
+        embedding_provider=provider,
+    )
+
+    assert llm.bound_tools is not None
+    assert len(llm.bound_tools) == 1
+    assert llm.bound_tools[0]["name"] == "weather_lookup"
+    assert result["bound_tools"][0]["name"] == "weather_lookup"
