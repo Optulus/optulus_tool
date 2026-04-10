@@ -169,6 +169,70 @@ def test_bind_tools_filters_and_binds(tmp_path) -> None:
     assert result["bound_tools"][0]["name"] == "weather_lookup"
 
 
+def test_bind_tools_emits_selection_metrics(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    provider = HashedEmbeddingProvider(dimensions=128)
+    llm = DummyLLM()
+    tools = [
+        {
+            "name": "weather_lookup",
+            "description": "Get weather forecast",
+            "input_schema": {"type": "object"},
+        },
+        {
+            "name": "heavy_debug_tool",
+            "description": " ".join(["debug"] * 300),
+            "input_schema": {"type": "object"},
+        },
+    ]
+    result = bind_tools(
+        llm,
+        tools,
+        context="weather tomorrow",
+        max_tools=1,
+        budget_tokens=20,
+        db_path=db_path,
+        embedding_provider=provider,
+        telemetry_enabled=True,
+    )
+    assert result["bound_tools"][0]["name"] == "weather_lookup"
+
+
+def test_bind_tools_logs_selection_when_enabled(tmp_path, caplog) -> None:
+    db_path = tmp_path / "registry.db"
+    provider = HashedEmbeddingProvider(dimensions=128)
+    llm = DummyLLM()
+    tools = [
+        {
+            "name": "weather_lookup",
+            "description": "Get weather forecast",
+            "input_schema": {"type": "object"},
+        },
+        {
+            "name": "heavy_debug_tool",
+            "description": " ".join(["debug"] * 300),
+            "input_schema": {"type": "object"},
+        },
+    ]
+
+    with caplog.at_level("INFO"):
+        bind_tools(
+            llm,
+            tools,
+            context="weather tomorrow",
+            max_tools=1,
+            budget_tokens=20,
+            db_path=db_path,
+            embedding_provider=provider,
+            telemetry_enabled=True,
+            logging_enabled=True,
+        )
+
+    logs = "\n".join(caplog.messages)
+    assert "Tool selection:" in logs
+    assert "TELEMETRY tool_selection" in logs
+
+
 def test_filter_tools_accepts_langchain_structured_tool(tmp_path) -> None:
     pytest.importorskip("langchain_core.tools")
     from langchain_core.tools import tool

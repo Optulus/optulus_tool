@@ -23,11 +23,14 @@ Example with LangChain ``@tool`` / ``BaseTool`` (requires ``langchain-core`` ins
 """
 
 from pathlib import Path
+import logging
 from typing import Iterable, Protocol, Any
 
 from .embeddings import EmbeddingProvider
 from .tool_registry import ToolRegistry
 from .tool_types import ToolLike
+
+logger = logging.getLogger(__name__)
 
 
 class SupportsBindTools(Protocol):
@@ -57,6 +60,8 @@ def filter_tools(
     pinned: Iterable[str] | None = None,
     db_path: str | Path = "~/.optulus/registry.db",
     embedding_provider: EmbeddingProvider | None = None,
+    telemetry_enabled: bool = False,
+    logging_enabled: bool = False,
 ) -> list[ToolLike]:
     if max_tools <= 0:
         raise ValueError("max_tools must be positive")
@@ -74,6 +79,24 @@ def filter_tools(
             budget_tokens=budget_tokens,
             pinned=pinned_set,
         )
+        event = _build_tool_selection_event(
+            candidate_records=records,
+            selected_records=selected,
+            max_tools=max_tools,
+            budget_tokens=budget_tokens,
+            pinned_count=len(pinned_set),
+        )
+        if logging_enabled:
+            logger.info(
+                "Tool selection: %s/%s kept, estimated token savings=%s",
+                event["selected_count"],
+                event["candidate_count"],
+                event["tokens_saved_est"],
+            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Tool selection event: %s", event)
+        if telemetry_enabled:
+            logger.info("TELEMETRY tool_selection %s", event)
         registry.record_selection(selected)
         return [record.original_tool for record in selected]
     finally:
@@ -90,6 +113,8 @@ def bind_tools(
     pinned: Iterable[str] | None = None,
     db_path: str | Path = "~/.optulus/registry.db",
     embedding_provider: EmbeddingProvider | None = None,
+    telemetry_enabled: bool = False,
+    logging_enabled: bool = False,
 ) -> Any:
     """Filter tools for context and bind them to an LLM in one call."""
     selected = filter_tools(
@@ -100,8 +125,36 @@ def bind_tools(
         pinned=pinned,
         db_path=db_path,
         embedding_provider=embedding_provider,
+        telemetry_enabled=telemetry_enabled,
+        logging_enabled=logging_enabled,
     )
     return llm.bind_tools(selected)
+
+
+def _build_tool_selection_event(
+    *,
+    candidate_records,
+    selected_records,
+    max_tools: int,
+    budget_tokens: int,
+    pinned_count: int,
+) -> dict[str, Any]:
+    candidate_tokens_est = sum(record.token_cost_estimate for record in candidate_records)
+    selected_tokens_est = sum(record.token_cost_estimate for record in selected_records)
+    selected_names = [record.name for record in selected_records]
+    return {
+        "event": "tool_selection",
+        "candidate_count": len(candidate_records),
+        "selected_count": len(selected_records),
+        "tools_pruned_count": len(candidate_records) - len(selected_records),
+        "candidate_tokens_est": candidate_tokens_est,
+        "selected_tokens_est": selected_tokens_est,
+        "tokens_saved_est": candidate_tokens_est - selected_tokens_est,
+        "max_tools": max_tools,
+        "budget_tokens": budget_tokens,
+        "pinned_count": pinned_count,
+        "selected_tool_names": selected_names,
+    }
 
 
 def _apply_limits(
